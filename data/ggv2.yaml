@@ -1,0 +1,4 @@
+discoveryNamespaceSelectors:
+- matchLabels:
+    gloo-discovery-internal: "true"
+#    kubernetes.io/metadata.name: gloo-system

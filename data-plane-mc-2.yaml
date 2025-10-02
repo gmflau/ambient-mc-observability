@@ -1,0 +1,16 @@
+common:
+  cluster: cluster2
+glooAgent:
+  enabled: true
+  relay:
+    serverAddress: 172.18.101.2:9900
+glooAnalyzer:
+  enabled: true
+telemetryCollector:
+  config:
+    exporters:
+      otlp:
+        endpoint: 172.18.101.1:4317
+  enabled: true
+telemetryCollectorCustomization:
+  skipVerify: true

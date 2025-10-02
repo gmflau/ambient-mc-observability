@@ -1,0 +1,42 @@
+common:
+  # Name of the cluster. Be sure to modify this value to match your cluster's name.
+  cluster: "kind-cluster-1"
+# Configuration for the Gloo management server.
+glooMgmtServer:
+  # NOTE: enable safe mode, requires all agents warmed to do translation https://docs.solo.io/gloo-mesh-enterprise/latest/concepts/platform/relay/#safemode
+  safeMode: true
+  enabled: true
+  serviceType: LoadBalancer
+  agents:
+  - name: kind-cluster-1
+  - name: kind-cluster-2
+
+# NOTE: agent was deployed with mgmt plane chart
+glooAgent:
+  enabled: true
+
+# Configuration for the Gloo UI.
+glooUi:
+  enabled: true
+# Gloo Platform Redis configuration options.
+redis:
+  deployment:
+    enabled: true
+# Helm values for configuring Prometheus. See the [Prometheus Helm chart](https://github.com/prometheus-community/helm-charts/blob/main/charts/prometheus/values.yaml) for the complete set of values.
+prometheus:
+  enabled: true
+telemetryCollector:
+  enabled: true
+# OTLP collector for workload cluster collectors
+telemetryGateway:
+  enabled: true
+  service:
+    type: LoadBalancer
+# Optional customization for the Gloo Platform Telemetry Collector.
+telemetryGatewayCustomization:
+  # Disable cert generation for the Gloo telemetry gateway.
+  disableCertGeneration: false
+  # Deprecated in favor of the pipelines field, which allows selectively enabling or customizing pipelines. Disables the default metrics/prometheus pipeline.
+  disableDefaultPipeline: false
+glooInsightsEngine:
+  enabled: true

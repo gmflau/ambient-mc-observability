@@ -1,0 +1,58 @@
+common:
+  cluster: kind-cluster-1
+glooAgent:
+  enabled: true
+glooInsightsEngine:
+  enabled: true
+glooMgmtServer:
+  agents:
+  - name: kind-cluster-1
+  - name: kind-cluster-2
+  enabled: true
+  safeMode: true
+  serviceType: LoadBalancer
+glooUi:
+  enabled: true
+licensing:
+  glooGatewayLicenseKey: eyJhZGRPbnMiOltdLCJleHAiOjI1NjExMzQ1MzMsImlhdCI6MTY5NzEzMDkzMywiayI6IjQ4biszUSIsImx0IjoidHJpYWwiLCJwcm9kdWN0IjoiZ2xvby10cmlhbCJ9.EnNbEl7yNNPZjaZY5m8Pa_kz1HwEeFaqdjsxhLT8Uqk
+  glooMeshLicenseKey: eyJhZGRPbnMiOltdLCJleHAiOjI1NjExMzQ1MzMsImlhdCI6MTY5NzEzMDkzMywiayI6IjQ4biszUSIsImx0IjoidHJpYWwiLCJwcm9kdWN0IjoiZ2xvby10cmlhbCJ9.EnNbEl7yNNPZjaZY5m8Pa_kz1HwEeFaqdjsxhLT8Uqk
+  glooTrialLicenseKey: eyJhZGRPbnMiOltdLCJleHAiOjI1NjExMzQ1MzMsImlhdCI6MTY5NzEzMDkzMywiayI6IjQ4biszUSIsImx0IjoidHJpYWwiLCJwcm9kdWN0IjoiZ2xvby10cmlhbCJ9.EnNbEl7yNNPZjaZY5m8Pa_kz1HwEeFaqdjsxhLT8Uqk
+prometheus:
+  enabled: true
+redis:
+  deployment:
+    enabled: true
+telemetryCollector:
+  enabled: true
+telemetryGateway:
+  enabled: true
+  service:
+    type: LoadBalancer
+telemetryGatewayCustomization:
+  disableCertGeneration: false
+  disableDefaultPipeline: false
+  pipelines:
+    traces/jaeger:
+      enabled: true
+jaeger:
+  enabled: true
+telemetryCollectorCustomization:
+  pipelines:
+    traces/istio:
+      enabled: true
+  # Add configuration to reduce gRPC context errors
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+            max_recv_msg_size_mib: 12
+            # Reduce context extraction errors
+            max_concurrent_streams: 1000
+          http:
+            endpoint: 0.0.0.0:4318
+    service:
+      telemetry:
+        logs:
+          level: "warn"  # Reduce log verbosity for context errors

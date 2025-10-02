@@ -1,0 +1,54 @@
+global:
+  hub: us-docker.pkg.dev/gloo-mesh/istio-workshops
+  tag: 1.27.0-solo
+meshConfig:
+  # Enable access logging only if using.
+  accessLogFile: /dev/stdout
+  # Encoding for the proxy access log (TEXT or JSON). Default value is TEXT.
+  accessLogEncoding: JSON
+
+
+  # Restrict outbound traffic to only registered services
+  # Test External Services
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY
+  
+
+  defaultConfig:
+    # wait for the istio-proxy to start before application pods
+    holdApplicationUntilProxyStarts: true
+    proxyMetadata:
+      # Enable Istio agent to handle DNS requests for known hosts
+      # Unknown hosts will automatically be resolved using upstream dns servers in resolv.conf
+      # (for proxy-dns)
+      ISTIO_META_DNS_CAPTURE: "true"
+      # Enable automatic address allocation (for proxy-dns)
+      #ISTIO_META_DNS_AUTO_ALLOCATE: "true" (deprecated)
+  extensionProviders:
+    - name: envoyOtelAls
+      envoyOtelAls:
+        service: "gloo-telemetry-collector.gloo-mesh.svc.cluster.local"
+pilot:
+  env:
+    # Allow multiple trust domains (Required for Gloo east/west routing)
+    PILOT_SKIP_VALIDATE_TRUST_DOMAIN: "true"
+    # Reload cacerts when cert-manager changes it
+    AUTO_RELOAD_PLUGIN_CERTS: "true"
+    # Disable selecting workload entries for local service routing.
+    # Required for Gloo VirtualDestinaton functionality.
+    PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES: "false"
+    # Enable IP auto-allocation for proxy-dns
+    PILOT_ENABLE_IP_AUTOALLOCATE: "true"
+values:
+  global:
+    meshID: mesh1
+    network: "istio-network"
+# Traffic management
+components:
+  pilot:
+    k8s:
+      env:
+      # Disable selecting workload entries for local service routing.
+      # Required for Gloo VirtualDestinaton functionality.
+      - name: PILOT_ENABLE_K8S_SELECT_WORKLOAD_ENTRIES
+        value: "false"

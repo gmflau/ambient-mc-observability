@@ -1,0 +1,29 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  image: kindest/node:v1.33.1@sha256:050072256b9a903bd914c0b2866828150cb229cea0efe5892e2b644d5dd3b34f
+  extraPortMappings:
+  - containerPort: 6443
+    hostPort: 7001
+  labels:
+    ingress-ready: true
+    topology.kubernetes.io/region: us-east-1
+    topology.kubernetes.io/zone: us-east-1a
+networking:
+  serviceSubnet: "10.1.0.0/16"
+  podSubnet: "10.101.0.0/16"
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+    endpoint = ["http://kind-registry:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+    endpoint = ["http://docker:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."us-docker.pkg.dev"]
+    endpoint = ["http://us-docker:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."us-central1-docker.pkg.dev"]
+    endpoint = ["http://us-central1-docker:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+    endpoint = ["http://quay:5000"]
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."gcr.io"]
+    endpoint = ["http://gcr:5000"]

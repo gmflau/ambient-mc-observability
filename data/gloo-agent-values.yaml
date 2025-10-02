@@ -1,0 +1,8 @@
+glooAgent:
+  enabled: true
+telemetryCollector:
+  enabled: true
+telemetryCollectorCustomization:
+  skipVerify: true
+glooAnalyzer:
+  enabled: true

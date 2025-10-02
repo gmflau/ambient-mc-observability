@@ -1,0 +1,10 @@
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: tracing-config
+  namespace: bookinfo
+spec:
+  tracing:
+  - providers:
+    - name: envoyOtelAls
+    randomSamplingPercentage: 100.0
