@@ -1,1 +1,7 @@
 /mgmt-plane*
+
+/ca.crt
+
+/images.txt
+
+/token

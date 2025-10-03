@@ -3,14 +3,14 @@ common:
 glooAgent:
   enabled: true
   relay:
-    serverAddress: 172.18.101.2:9900
+    serverAddress: 172.18.101.1:9900
 glooAnalyzer:
   enabled: true
 telemetryCollector:
   config:
     exporters:
       otlp:
-        endpoint: 172.18.101.1:4317
+        endpoint: 172.18.101.2:4317
   enabled: true
 telemetryCollectorCustomization:
   skipVerify: true
