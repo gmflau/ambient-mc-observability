@@ -1,0 +1,404 @@
+apiVersion: v1
+data:
+  relay: "receivers:\n  jaeger:\n    protocols:\n      grpc:\n        endpoint: 0.0.0.0:14250\n
+    \     thrift_binary:\n        endpoint: 0.0.0.0:6832\n      thrift_compact:\n
+    \       endpoint: 0.0.0.0:6831\n      thrift_http:\n        endpoint: 0.0.0.0:14268\n\n
+    \ opencensus:\n    endpoint: 0.0.0.0:55679\n\n  otlp:\n    protocols:\n      grpc:\n
+    \       endpoint: 0.0.0.0:4317\n        max_recv_msg_size_mib: 12\n      http:\n
+    \       endpoint: 0.0.0.0:4318\n\n  zipkin:\n    endpoint: 0.0.0.0:9411\n\n  prometheus:\n
+    \   config:\n      global:\n        evaluation_interval: 1m\n        scrape_interval:
+    15s\n        scrape_timeout: 15s\n      scrape_configs:\n      # Scrape the collector
+    itself\n      - job_name: otel-collector\n        scrape_interval: 15s\n        static_configs:\n
+    \       - labels:\n            collector_name: ${env:KUBE_POD_NAME}\n            cluster:
+    mgmt\n          targets:\n            - 0.0.0.0:8888\n\n      # Scrape workload
+    metrics\n      - job_name: mesh-workloads\n        honor_labels: true\n        kubernetes_sd_configs:\n
+    \       - role: pod\n          selectors:\n          - role: pod\n            field:
+    \"spec.nodeName=${env:KUBE_NODE_NAME}\"\n        relabel_configs:\n        - source_labels:
+    [__meta_kubernetes_pod_container_port_name]\n          action: keep\n          regex:
+    '.*-envoy-prom'\n        - action: keep\n          regex: true\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_prometheus_io_scrape\n        - action:
+    replace\n          regex: (https?)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scheme\n
+    \         target_label: __scheme__\n        - action: replace\n          regex:
+    (.+)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_path\n
+    \         target_label: __metrics_path__\n        - action: replace\n          regex:
+    (\\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})\n          replacement: '[$$2]:$$1'\n
+    \         source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          regex: (\\d+);((([0-9]+?)(\\.|$)){4})\n          replacement:
+    $$2:$$1\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: labelmap\n          regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)\n
+    \         replacement: __param_$$1\n        - action: labelmap\n          regex:
+    __meta_kubernetes_pod_label_(.+)\n        - action: replace\n          source_labels:\n
+    \         - __meta_kubernetes_namespace\n          target_label: namespace\n        -
+    action: replace\n          source_labels:\n          - __meta_kubernetes_pod_name\n
+    \         target_label: pod_name\n        - action: replace\n          replacement:
+    mgmt\n          target_label: cluster\n        - action: drop\n          regex:
+    Pending|Succeeded|Failed|Completed\n          source_labels:\n          - __meta_kubernetes_pod_phase\n
+    \       metric_relabel_configs:\n        - action: labelmap\n          regex:
+    __meta_kubernetes_service_label_(.+)\n        - action: replace\n          source_labels:\n
+    \         - __meta_kubernetes_service_name\n          target_label: service\n
+    \       - action: replace\n          regex: Kubernetes\n          replacement:
+    mgmt\n          source_labels:\n          - source_cluster\n          target_label:
+    source_cluster\n        - action: replace\n          regex: Kubernetes\n          replacement:
+    mgmt\n          source_labels:\n          - destination_cluster\n          target_label:
+    destination_cluster\n        - source_labels:\n          - source_workload\n          -
+    source_workload_namespace\n          - source_cluster\n          target_label:
+    workload_id\n          separator: '.'\n        - source_labels:\n          - destination_workload\n
+    \         - destination_workload_namespace\n          - destination_cluster\n
+    \         target_label: destination_workload_id\n          separator: '.'\n        #
+    if both workload id and destination service are unknown\n        # set the label
+    to \"..\" which will be handled by a later rule\n        - source_labels:\n          -
+    destination_workload_id\n          - destination_service\n          separator:
+    \";\"\n          target_label: destination_workload_id\n          replacement:
+    \"..\"\n          regex: \"unknown.unknown.unknown;unknown\"\n        # if workload
+    id is unknown but we have a destination\n        # service, use it\n        -
+    source_labels:\n          - destination_workload_id\n          - destination_service\n
+    \         separator: \";\"\n          target_label: destination_workload_id\n
+    \         replacement: $$2.<unknown>.<unknown>\n          regex: \"(unknown.unknown.unknown);(.*)\"\n
+    \       # replace with unknown if missing\n        - source_labels:\n          -
+    destination_workload_id\n          target_label: destination_workload_id\n          replacement:
+    \"unknown.unknown.unknown\"\n          regex: \"..\"\n        - source_labels:\n
+    \         - workload_id\n          target_label: workload_id\n          replacement:
+    \"unknown.unknown.unknown\"\n          regex: \"..\"\n\n      # Scrape istiod
+    metrics\n      - job_name: istiod-metrics\n        honor_labels: true\n        kubernetes_sd_configs:\n
+    \       - role: pod\n          selectors:\n          - role: pod\n            field:
+    \"spec.nodeName=${env:KUBE_NODE_NAME}\"\n            label: \"istio\"\n        relabel_configs:\n
+    \       - action: keep\n          regex: pilot|istiod\n          source_labels:\n
+    \           - __meta_kubernetes_pod_label_istio\n        - action: keep\n          regex:
+    true\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scrape\n
+    \       - action: replace\n          regex: (https?)\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_prometheus_io_scheme\n          target_label:
+    __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_prometheus_io_path\n          target_label:
+    __metrics_path__\n        - action: replace\n          regex: (\\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})\n
+    \         replacement: '[$$2]:$$1'\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          regex: (\\d+);((([0-9]+?)(\\.|$)){4})\n          replacement:
+    $$2:$$1\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: labelmap\n          regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)\n
+    \         replacement: __param_$$1\n        - action: labelmap\n          regex:
+    __meta_kubernetes_pod_label_(.+)\n        - action: replace\n          source_labels:\n
+    \         - __meta_kubernetes_namespace\n          target_label: namespace\n        -
+    action: replace\n          source_labels:\n          - __meta_kubernetes_pod_name\n
+    \         target_label: pod_name\n        - action: replace\n          replacement:
+    mgmt\n          target_label: cluster\n        - action: drop\n          regex:
+    Pending|Succeeded|Failed|Completed\n          source_labels:\n          - __meta_kubernetes_pod_phase\n\n
+    \     # Scrape the gloo platform pods\n      - job_name: gloo-platform-pods\n
+    \       honor_labels: true\n        kubernetes_sd_configs:\n        - role: pod\n
+    \         namespaces:\n            names:\n            - gloo-mesh\n          selectors:\n
+    \         - role: pod\n            field: \"spec.nodeName=${env:KUBE_NODE_NAME}\"\n
+    \       relabel_configs:\n        - action: keep\n          regex: gloo-mesh-mgmt-server|gloo-mesh-agent|gloo-mesh-analyzer|gloo-mesh-ui\n
+    \         source_labels:\n          - __meta_kubernetes_pod_label_app\n        -
+    action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scrape\n
+    \       - action: replace\n          regex: (https?)\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_prometheus_io_scheme\n          target_label:
+    __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_prometheus_io_path\n          target_label:
+    __metrics_path__\n        - source_labels: [__meta_kubernetes_pod_container_port_name]\n
+    \         action: keep\n          regex: stats\n        - action: replace\n          regex:
+    (\\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})\n          replacement: '[$$2]:$$1'\n
+    \         source_labels:\n          - __meta_kubernetes_pod_container_port_number\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          regex: (\\d+);((([0-9]+?)(\\.|$)){4})\n          replacement:
+    $$2:$$1\n          source_labels:\n          - __meta_kubernetes_pod_container_port_number\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: labelmap\n          regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)\n
+    \         replacement: __param_$$1\n        - action: labelmap\n          regex:
+    __meta_kubernetes_pod_label_(.+)\n        - action: replace\n          source_labels:\n
+    \         - __meta_kubernetes_namespace\n          target_label: namespace\n        -
+    action: drop\n          regex: Pending|Succeeded|Failed|Completed\n          source_labels:\n
+    \         - __meta_kubernetes_pod_phase\n        - action: replace\n          replacement:
+    mgmt\n          target_label: cluster\n        - action: replace\n          target_label:
+    pod\n          source_labels: [__meta_kubernetes_pod_name]\n\n      # Scrape the
+    ambient ztunnels\n      - job_name: ambient-ztunnels\n        honor_labels: true\n
+    \       kubernetes_sd_configs:\n        - role: pod\n          selectors:\n          -
+    role: pod\n            field: \"spec.nodeName=${env:KUBE_NODE_NAME}\"\n        relabel_configs:\n
+    \       - action: keep\n          regex: ztunnel\n          source_labels:\n          -
+    __meta_kubernetes_pod_label_app\n        - action: replace\n          regex: (\\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})\n
+    \         replacement: '[$$2]:$$1'\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          regex: (\\d+);((([0-9]+?)(\\.|$)){4})\n          replacement:
+    $$2:$$1\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          replacement: \"http\"\n          target_label: __schema__\n
+    \       - action: labelmap\n          regex: __meta_kubernetes_pod_label_(.+)\n
+    \       - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n
+    \         target_label: namespace\n        - action: replace\n          replacement:
+    mgmt\n          target_label: cluster\n        - action: drop\n          regex:
+    Pending|Succeeded|Failed|Completed\n          source_labels:\n          - __meta_kubernetes_pod_phase\n
+    \       metric_relabel_configs:\n        - target_label: ambient\n          replacement:
+    \"ztunnel\"\n        - action: labelmap\n          regex: __meta_kubernetes_service_label_(.+)\n
+    \       - action: replace\n          source_labels:\n          - __meta_kubernetes_service_name\n
+    \         target_label: service\n        - action: replace\n          regex: Kubernetes\n
+    \         replacement: mgmt\n          source_labels:\n          - source_cluster\n
+    \         target_label: source_cluster\n        - action: replace\n          regex:
+    Kubernetes\n          replacement: mgmt\n          source_labels:\n          -
+    destination_cluster\n          target_label: destination_cluster\n        - source_labels:\n
+    \         - source_workload\n          - source_workload_namespace\n          -
+    source_cluster\n          target_label: workload_id\n          separator: '.'\n
+    \       - source_labels:\n          - destination_workload\n          - destination_workload_namespace\n
+    \         - destination_cluster\n          target_label: destination_workload_id\n
+    \         separator: '.'\n        # replace with unknown if missing\n        -
+    source_labels:\n          - destination_workload_id\n          target_label: destination_workload_id\n
+    \         replacement: \"unknown.unknown.unknown\"\n          regex: \"..\"\n
+    \       - source_labels:\n          - workload_id\n          target_label: workload_id\n
+    \         replacement: \"unknown.unknown.unknown\"\n          regex: \"..\"\n\n
+    \     # Scrape the ambient waypoints\n      - job_name: ambient-waypoints\n        honor_labels:
+    true\n        kubernetes_sd_configs:\n        - role: pod\n          selectors:\n
+    \         - role: pod\n            field: \"spec.nodeName=${env:KUBE_NODE_NAME}\"\n
+    \       relabel_configs:\n        - action: keep\n          regex: \".+\"\n          source_labels:\n
+    \         - __meta_kubernetes_pod_annotation_istio_io_for_service_account\n        -
+    action: replace\n          regex: (\\d+);(([A-Fa-f0-9]{1,4}::?){1,7}[A-Fa-f0-9]{1,4})\n
+    \         replacement: '[$$2]:$$1'\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          regex: (\\d+);((([0-9]+?)(\\.|$)){4})\n          replacement:
+    $$2:$$1\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n
+    \         - __meta_kubernetes_pod_ip\n          target_label: __address__\n        -
+    action: replace\n          replacement: \"http\"\n          target_label: __schema__\n
+    \       - action: labelmap\n          regex: __meta_kubernetes_pod_label_(.+)\n
+    \       - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n
+    \         target_label: namespace\n        - action: drop\n          regex: Pending|Succeeded|Failed|Completed\n
+    \         source_labels:\n          - __meta_kubernetes_pod_phase\n        - action:
+    replace\n          replacement: mgmt\n          target_label: cluster\n        metric_relabel_configs:\n
+    \       - target_label: ambient\n          replacement: \"waypoint\"\n        -
+    action: labelmap\n          regex: __meta_kubernetes_service_label_(.+)\n        -
+    action: replace\n          source_labels:\n          - __meta_kubernetes_service_name\n
+    \         target_label: service\n        - action: replace\n          regex: Kubernetes\n
+    \         replacement: mgmt\n          source_labels:\n          - source_cluster\n
+    \         target_label: source_cluster\n        - action: replace\n          regex:
+    Kubernetes\n          replacement: mgmt\n          source_labels:\n          -
+    destination_cluster\n          target_label: destination_cluster\n        - source_labels:\n
+    \         - source_workload\n          - source_workload_namespace\n          -
+    source_cluster\n          target_label: workload_id\n          separator: '.'\n
+    \       - source_labels:\n          - destination_workload\n          - destination_workload_namespace\n
+    \         - destination_cluster\n          target_label: destination_workload_id\n
+    \         separator: '.'\n        # replace with unknown if missing\n        -
+    source_labels:\n          - destination_workload_id\n          target_label: destination_workload_id\n
+    \         replacement: \"unknown.unknown.unknown\"\n          regex: \"..\"\n
+    \       - source_labels:\n          - workload_id\n          target_label: workload_id\n
+    \         replacement: \"unknown.unknown.unknown\"\n          regex: \"..\"\n
+    \ # Custom receivers\n  filelog/access_logs:\n    include:\n    - /var/log/pods/*/istio-proxy/*.log\n
+    \   include_file_name: false\n    include_file_path: true\n    operators:\n    -
+    expr: body matches \"^[^{}]*$\"\n      type: filter\n    - id: get-format\n      routes:\n
+    \     - expr: body matches \"^\\\\{\"\n        output: parser-docker\n      -
+    expr: body matches \"^[^ Z]+ \"\n        output: parser-crio\n      - expr: body
+    matches \"^[^ Z]+Z\"\n        output: parser-containerd\n      type: router\n
+    \   - id: parser-crio\n      output: extract_metadata_from_filepath\n      regex:
+    ^(?P<time>[^ Z]+) (?P<stream>stdout|stderr) (?P<logtag>[^ ]*) ?(?P<log>.*)$\n
+    \     type: regex_parser\n    - id: parser-containerd\n      output: extract_metadata_from_filepath\n
+    \     regex: ^(?P<time>[^ ^Z]+Z) (?P<stream>stdout|stderr) (?P<logtag>[^ ]*) ?(?P<log>.*)$\n
+    \     type: regex_parser\n    - id: parser-docker\n      output: extract_metadata_from_filepath\n
+    \     type: json_parser\n    - cache:\n        size: 128\n      id: extract_metadata_from_filepath\n
+    \     output: log_parser\n      parse_from: attributes[\"log.file.path\"]\n      regex:
+    ^.*\\/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<uid>[a-f0-9\\-]{36})\\/(?P<container_name>[^\\._]+)\\/(?P<restart_count>\\d+)\\.log$\n
+    \     type: regex_parser\n    - id: log_parser\n      parse_from: attributes.log\n
+    \     timestamp:\n        layout: '%Y-%m-%dT%H:%M:%S.%LZ'\n        parse_from:
+    attributes.timestamp\n      type: json_parser\n    - expr: (attributes?.api_id
+    ?? \"\") == \"\"\n      type: filter\n    - from: attributes.stream\n      to:
+    attributes[\"log.iostream\"]\n      type: move\n    - from: attributes.container_name\n
+    \     to: resource[\"k8s.container.name\"]\n      type: move\n    - from: attributes.namespace\n
+    \     to: resource[\"k8s.namespace.name\"]\n      type: move\n    - from: attributes.pod_name\n
+    \     to: resource[\"k8s.pod.name\"]\n      type: move\n    - from: attributes.restart_count\n
+    \     to: resource[\"k8s.container.restart_count\"]\n      type: move\n    - from:
+    attributes.uid\n      to: resource[\"k8s.pod.uid\"]\n      type: move\n    - field:
+    body\n      type: remove\n    - field: attributes.log\n      type: remove\n  filelog/gloo_components:\n
+    \   include:\n    - /var/log/pods/*_gloo-*/*/*.log\n    include_file_name: false\n
+    \   include_file_path: true\n    operators:\n    - cache:\n        size: 128\n
+    \     id: extract_metadata_from_filepath\n      parse_from: attributes[\"log.file.path\"]\n
+    \     regex: ^.*\\/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<uid>[a-f0-9\\-]{36})\\/(?P<container_name>[^\\._]+)\\/(?P<restart_count>\\d+)\\.log$\n
+    \     type: regex_parser\n    - from: attributes.namespace\n      to: resource[\"k8s.namespace.name\"]\n
+    \     type: move\n    - from: attributes.pod_name\n      to: resource[\"k8s.pod.name\"]\n
+    \     type: move\n    - from: attributes.container_name\n      to: resource[\"k8s.container.name\"]\n
+    \     type: move\n    - field: resource[\"component\"]\n      if: resource[\"k8s.pod.name\"]
+    contains \"gloo-mesh-agent\"\n      type: add\n      value: gloo-mesh-agent\n
+    \   - field: resource[\"component\"]\n      if: resource[\"k8s.pod.name\"] contains
+    \"gloo-mesh-mgmt-server\"\n      type: add\n      value: gloo-mesh-mgmt-server\n
+    \   - field: resource[\"component\"]\n      if: resource[\"k8s.pod.name\"] contains
+    \"gloo-mesh-ui\"\n      type: add\n      value: gloo-mesh-ui\n    - field: resource[\"component\"]\n
+    \     if: resource[\"k8s.pod.name\"] contains \"gloo-mesh-redis\"\n      type:
+    add\n      value: gloo-mesh-redis\n    - field: resource[\"component\"]\n      if:
+    resource[\"k8s.pod.name\"] contains \"gloo-redis-snapshot\"\n      type: add\n
+    \     value: gloo-redis-snapshot\n    - field: resource[\"component\"]\n      if:
+    resource[\"k8s.pod.name\"] contains \"gloo-redis-insights\"\n      type: add\n
+    \     value: gloo-redis-insights\n    - field: resource[\"component\"]\n      if:
+    resource[\"k8s.pod.name\"] contains \"gloo-telemetry-collector-agent\"\n      type:
+    add\n      value: gloo-telemetry-collector-agent\n    - field: resource[\"component\"]\n
+    \     if: resource[\"k8s.pod.name\"] contains \"gloo-telemetry-gateway\"\n      type:
+    add\n      value: gloo-telemetry-gateway\n    - field: resource[\"component\"]\n
+    \     if: resource[\"k8s.pod.name\"] contains \"gloo-mesh-analyzer\"\n      type:
+    add\n      value: gloo-mesh-analyzer\n  filelog/istiod:\n    include:\n    - /var/log/pods/*_istiod-*/*/*.log\n
+    \   include_file_name: false\n    include_file_path: true\n    operators:\n    -
+    cache:\n        size: 128\n      id: extract_metadata_from_filepath\n      parse_from:
+    attributes[\"log.file.path\"]\n      regex: ^.*\\/(?P<namespace>[^_]+)_(?P<pod_name>[^_]+)_(?P<uid>[a-f0-9\\-]{36})\\/(?P<container_name>[^\\._]+)\\/(?P<restart_count>\\d+)\\.log$\n
+    \     type: regex_parser\n    - from: attributes.namespace\n      to: resource[\"k8s.namespace.name\"]\n
+    \     type: move\n    - from: attributes.pod_name\n      to: resource[\"k8s.pod.name\"]\n
+    \     type: move\n    - from: attributes.container_name\n      to: resource[\"k8s.container.name\"]\n
+    \     type: move\n    - cache:\n        size: 128\n      id: extract_component_from_pod_name\n
+    \     parse_from: resource[\"k8s.pod.name\"]\n      regex: ^(?P<component_name>.*)-[0-9a-zA-Z]{1,10}-[0-9a-zA-Z]*$\n
+    \     type: regex_parser\n    - from: attributes.component_name\n      to: resource[\"component\"]\n
+    \     type: move\n\nprocessors:\n  resource/cluster_context:\n    attributes:\n
+    \     - key: \"cluster_name\"\n        action: insert\n        value: mgmt\n\n
+    \ resource/ui_source_context:\n    attributes:\n      - key: \"source\"\n        action:
+    insert\n        value: \"ui-log-stream\"\n\n  resource/portal_source_context:\n
+    \   attributes:\n      - key: \"source\"\n        action: insert\n        value:
+    \"portal\"\n\n  gloo_metrics_processor:\n    clusterName: mgmt\n    enableClusterNodeProcessor:
+    false\n\n  filter/min:\n    metrics:\n      include:\n        match_type: strict\n
+    \       metric_names:\n          # istio gateway, sidecar, ztunnel, waypoint,
+    and gloo gateway metrics\n          - istio_requests_total\n          - istio_request_duration_milliseconds\n
+    \         - istio_tcp_sent_bytes_total\n          - istio_tcp_received_bytes_total\n
+    \         - istio_tcp_connections_opened_total\n          - gloo_gateway_upstream_rq\n
+    \         - gloo_gateway_upstream_rq_time\n          - gloo_gateway_upstream_cx_rx_bytes_total\n
+    \         - gloo_gateway_upstream_cx_tx_bytes_total\n          # istiod metrics\n
+    \         - pilot_proxy_convergence_time\n          # required for meshctl\n          -
+    relay_pull_clients_connected\n          - relay_push_clients_connected\n          -
+    relay_push_clients_warmed\n          # Keep otel-collector metrics that show how
+    it's working\n          - otelcol_processor_refused_metric_points\n          -
+    otelcol_receiver_refused_metric_points\n          - otelcol_processor_refused_spans\n
+    \         - otelcol_exporter_queue_capacity\n          - otelcol_exporter_queue_size\n
+    \         - otelcol_loadbalancer_backend_latency\n          - otelcol_exporter_send_failed_spans\n
+    \         # OTel in version 0.87.0+ has a bug where it will drop metrics if the
+    suffix is added, in this case `_total`\n          # the alternative with the suffix
+    are kept in place if this breaking change/bug is fixed in the future\n          -
+    istio_requests\n          - istio_tcp_sent_bytes\n          - istio_tcp_received_bytes\n
+    \         - istio_tcp_connections_opened\n          - gloo_mesh_agent_warmed_up\n
+    \         - gloo_mesh_reconciler_time_sec\n          - gloo_mesh_garbage_collection_time_sec\n
+    \         - gloo_mesh_redis_relation_err\n          - gloo_mesh_redis_sync_err\n
+    \         - gloo_mesh_redis_write_time_sec\n          - gloo_mesh_snapshot_upserter_op_time_sec\n
+    \         - gloo_mesh_translation_time_sec\n          - gloo_mesh_translator_concurrency\n
+    \         - translation_error\n          - translation_warning\n          - gloo_mesh_relay_client_delta_pull_time_sec\n
+    \         - gloo_mesh_relay_client_delta_pull_err\n          - gloo_mesh_relay_client_delta_push_time_sec\n
+    \         - gloo_mesh_relay_client_delta_push_err\n          - gloo_mesh_build_snapshot_metric_time_sec\n
+    \         - gloo_mesh_redis_write_time_sec\n          - gloo_mesh_redis_sync_err\n
+    \         - gloo_mesh_safe_mode_active\n          - gloo_mesh_insights_store_upsert_time_seconds\n
+    \         - gloo_mesh_insights_store_list_time_seconds\n          - gloo_mesh_insights_store_delete_time_seconds\n
+    \         - solo_io_gloo_mesh_gateway_license\n          - gloo_mesh_insights\n
+    \         - gloo_mesh_insights_resources_scanned\n          - gloo_mesh_insight_engine_errors_total\n
+    \         - gloo_mesh_insights_total_execution_time\n          - gloo_mesh_insights_execution_time\n
+    \         - gloo_mesh_analyzer_total_execution_time\n          - gloo_mesh_analyzer_execution_time\n
+    \         - gloo_mesh_analyzer_logs_total\n          - object_write_fails_total\n
+    \         - gloo_mesh_relay_client_last_delta_pull_received_timestamp_seconds\n
+    \         - gloo_mesh_relay_client_last_server_communication_pull_stream_timestamp_seconds\n
+    \         - gloo_mesh_relay_client_last_delta_push_timestamp_seconds\n          -
+    gloo_mesh_relay_client_delta_push_last_loop_timestamp_seconds\n          # Solo.io
+    licenses\n          - solo_io_gloo_gateway_license\n          - solo_io_gloo_mesh_license\n
+    \         - solo_io_gloo_core_license\n          - solo_io_gloo_network_license\n\n
+    \ # Metric label allow lists to reduce cardinality in our internal metric pipelines\n
+    \ transform/keep_istio_labels:\n    metric_statements:\n      - context: datapoint\n
+    \       statements:\n          - keep_keys(attributes, [\"cluster\",\"collector_pod\",\"connection_security_policy\",\"destination_cluster\",\"destination_principal\",\"destination_service\",\"destination_workload\",\"destination_workload_id\",\"destination_workload_namespace\",\"gloo_mesh\",\"namespace\",\"pod_name\",\"reporter\",\"response_code\",\"response_flags\",\"source_cluster\",\"source_principal\",\"source_workload\",\"source_workload_namespace\",\"version\",\"workload_id\",
+    \"source_canonical_service\", \"source_canonical_revision\", \"destination_canonical_service\",
+    \"destination_canonical_revision\"]) where IsMatch(metric.name, \"^istio.*\")\n
+    \ transform/keep_otelcol_labels:\n    metric_statements:\n      - context: datapoint\n
+    \       statements:\n          - keep_keys(attributes, [\"app\",\"cluster\",\"collector_name\",\"collector_pod\",\"component\",\"exporter\",\"namespace\",\"pod_template_generation\",\"processor\",\"service_version\"])
+    where IsMatch(metric.name, \"^otelcol.*\")\n  transform/keep_ebpf_solo_io_labels:\n
+    \   metric_statements:\n      - context: datapoint\n        statements:\n          -
+    keep_keys(attributes, [\"app\",\"client_addr\",\"cluster\",\"code\",\"collector_pod\",\"component\",\"destination\",\"local_addr\",\"namespace\",\"pod\",\"pod_template_generation\",\"remote_identity\",\"server_identity\",\"source\"])
+    where IsMatch(metric.name, \"^ebpf_solo_io.*\")\n  # Custom processors\n  batch:\n
+    \   send_batch_max_size: 3000\n    send_batch_size: 2000\n    timeout: 600ms\n
+    \ batch/logs:\n    send_batch_size: 100\n    timeout: 5s\n  memory_limiter:\n
+    \   check_interval: 1s\n    limit_percentage: 85\n    spike_limit_percentage:
+    10\n\n  # Create gloo_gateway_ metrics out of envoy_cluster_ metrics when envoy_cluster_name
+    is meaningful for our Graph\n  # Update experimental_match_labels to match all
+    desired kind once they are supported by Gloo Gateway\n  metricstransform/ggv1_gloo_gateway_metrics:\n
+    \   # This processor creates gloo_gateway_ metrics based on GGv1 envoy cluster
+    name format.\n    transforms:\n      - include: \"(envoy_cluster_upstream_rq$)\"\n
+    \       action: insert\n        new_name: gloo_gateway_upstream_rq\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube-svc.*\"}\n
+    \     - include: \"(envoy_cluster_upstream_rq_time$)\"\n        action: insert\n
+    \       new_name: gloo_gateway_upstream_rq_time\n        match_type: regexp\n
+    \       experimental_match_labels: {\"envoy_cluster_name\": \"^kube-svc.*\"}\n
+    \     - include: envoy_cluster_upstream_cx_rx_bytes_total\n        action: insert\n
+    \       new_name: gloo_gateway_upstream_cx_rx_bytes_total\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube-svc.*\"}\n
+    \     - include: envoy_cluster_upstream_cx_tx_bytes_total\n        action: insert\n
+    \       new_name: gloo_gateway_upstream_cx_tx_bytes_total\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube-svc.*\"}\n
+    \ metricstransform/ggv2_gloo_gateway_metrics:\n    # This processor creates gloo_gateway_
+    metrics based on GGv2 envoy cluster name format.\n    transforms:\n      - include:
+    (envoy_cluster_upstream_rq$)\n        action: insert\n        new_name: gloo_gateway_upstream_rq\n
+    \       match_type: regexp\n        experimental_match_labels: {\"envoy_cluster_name\":
+    \"^kube_.|^backend_.*\"}\n      - include: \"(envoy_cluster_upstream_rq_time$)\"\n
+    \       action: insert\n        new_name: gloo_gateway_upstream_rq_time\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube_.|^backend_.*\"}\n
+    \     - include: envoy_cluster_upstream_cx_rx_bytes_total\n        action: insert\n
+    \       new_name: gloo_gateway_upstream_cx_rx_bytes_total\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube_.|^backend_.*\"}\n
+    \     - include: envoy_cluster_upstream_cx_tx_bytes_total\n        action: insert\n
+    \       new_name: gloo_gateway_upstream_cx_tx_bytes_total\n        match_type:
+    regexp\n        experimental_match_labels: {\"envoy_cluster_name\": \"^kube_.|^backend_.*\"}\n
+    \ transform/ggv1_envoy_cluster_names_to_workload_names:\n    error_mode: ignore\n
+    \   metric_statements:\n    - context: datapoint\n      statements:\n      - set(cache[\"temp\"],
+    Split(attributes[\"envoy_cluster_name\"], \"_\")) where IsMatch(attributes[\"envoy_cluster_name\"],
+    \"^kube-svc.*\") and IsMatch(metric.name, \"^gloo_gateway_.*\")\n      # We are
+    splitting the value of the original envoy_cluster_name into slices delimited by
+    underscores.\n      # Format: kind_upstreamName_upstreamNs_svcNs_svcName_svcPort\n
+    \     - set(attributes[\"destination_workload_namespace\"], cache[\"temp\"][3])
+    where IsMatch(attributes[\"envoy_cluster_name\"], \"^kube-svc.*\") and IsMatch(metric.name,
+    \"^gloo_gateway_.*\")\n      - set(attributes[\"destination_workload\"], cache[\"temp\"][4])
+    where IsMatch(attributes[\"envoy_cluster_name\"], \"^kube-svc.*\") and IsMatch(metric.name,
+    \"^gloo_gateway_.*\")\n  transform/ggv2_envoy_cluster_names_to_workload_names:\n
+    \   error_mode: ignore\n    metric_statements:\n    - context: datapoint\n      statements:\n
+    \     - set(cache[\"temp\"], Split(attributes[\"envoy_cluster_name\"], \"_\"))
+    where IsMatch(attributes[\"envoy_cluster_name\"], \"^kube_.*|^backend_.*\") and
+    IsMatch(metric.name, \"^gloo_gateway_.*\")\n      # We are splitting the value
+    of the original envoy_cluster_name into slices delimited by underscores.\n      #
+    Format: gvPrefix_Namespace_Name_ExtraKey_Port\n      - set(attributes[\"destination_workload_namespace\"],
+    cache[\"temp\"][1]) where IsMatch(attributes[\"envoy_cluster_name\"], \"^kube_.*|^backend_.*\")
+    and IsMatch(metric.name, \"^gloo_gateway_.*\")\n      - set(attributes[\"destination_workload\"],
+    cache[\"temp\"][2]) where IsMatch(attributes[\"envoy_cluster_name\"], \"^kube_*|^backend_.*\")
+    and IsMatch(metric.name, \"^gloo_gateway_.*\")\n  transform/ggvx_set_static_attributes:\n
+    \   metric_statements:\n      - context: datapoint\n        statements:\n          -
+    set(attributes[\"response_code\"], attributes[\"envoy_response_code\"]) where
+    IsMatch(metric.name, \"^gloo_gateway_upstream_rq\")\n          - set(attributes[\"source_workload\"],
+    attributes[\"app_kubernetes_io_name\"]) where IsMatch(metric.name, \"^gloo_gateway_.*\")\n
+    \         - set(attributes[\"source_workload_namespace\"], attributes[\"kube_namespace\"])
+    where IsMatch(metric.name, \"^gloo_gateway_.*\")\n          - set(attributes[\"source_cluster\"],
+    \"mgmt\") where IsMatch(metric.name, \"^gloo_gateway_.*\")\n          - set(attributes[\"destination_cluster\"],
+    \"mgmt\") where IsMatch(metric.name, \"^gloo_gateway_.*\")\n  transform/ggvx_create_workload_ids:\n
+    \   metric_statements:\n    - context: datapoint\n      statements:\n        -
+    set(attributes[\"workload_id\"], Concat([attributes[\"source_workload\"], attributes[\"source_workload_namespace\"],
+    attributes[\"source_cluster\"]], \".\")) where IsMatch(metric.name, \"^gloo_gateway_.*\")\n
+    \       - set(attributes[\"destination_workload_id\"], Concat([attributes[\"destination_workload\"],
+    attributes[\"destination_workload_namespace\"], attributes[\"destination_cluster\"]],
+    \".\")) where IsMatch(metric.name, \"^gloo_gateway_.*\")\n  transform/keep_gloo_gateway_labels:\n
+    \   metric_statements:\n      - context: datapoint\n        statements:\n          -
+    keep_keys(attributes, [\"cluster\",\"collector_pod\",\"destination_cluster\",\"destination_workload\",\"destination_workload_id\",\"destination_workload_namespace\",\"namespace\",\"pod_name\",\"source_cluster\",\"source_workload\",\"source_workload_namespace\",\"workload_id\",
+    \"response_code\"]) where IsMatch(metric.name, \"^gloo_gateway.*\")\nexporters:\n
+    \ otlp/jaeger:\n    endpoint: gloo-jaeger-collector.gloo-mesh.svc:4317\n    tls:\n
+    \     insecure: true\n  # Custom exporters\n  clickhouse:\n    database: default\n
+    \   endpoint: tcp://clickhouse.gloo-mesh.svc:9000?dial_timeout=10s&compress=lz4\n
+    \   logs_table_name: gloo_api_logs\n    password: default\n    retry_on_failure:\n
+    \     enabled: true\n      initial_interval: 1s\n      max_elapsed_time: 5m\n
+    \     max_interval: 30s\n    timeout: 5s\n    ttl: 72h\n    username: default\n
+    \ prometheus:\n    add_metric_suffixes: false\n    endpoint: 0.0.0.0:9091\n  redisstream/basic:\n
+    \   endpoint: gloo-mesh-redis.gloo-mesh:6379\n    expire: 30m\n    max_entries:
+    1\n    stream_attributes:\n      resource_attributes:\n      - cluster_name\n
+    \     - source\n  redisstream/ui:\n    endpoint: gloo-mesh-redis.gloo-mesh:6379\n
+    \   expire: 30m\n    stream: ui\n    stream_attributes:\n      resource_attributes:\n
+    \     - cluster_name\n      - source\n      - component\n      - k8s.pod.name\n
+    \     - k8s.container.name\n\nextensions:\n  health_check:\n    endpoint: 0.0.0.0:13133\n\nservice:\n
+    \ telemetry:\n    logs:\n      encoding: json\n    metrics:\n      address: 0.0.0.0:8888\n
+    \ extensions:\n    - health_check\n  pipelines:\n          \n    metrics/ui:\n
+    \     processors:\n      - memory_limiter\n      - transform/keep_istio_labels\n
+    \     - transform/keep_otelcol_labels\n      - metricstransform/ggv1_gloo_gateway_metrics\n
+    \     - metricstransform/ggv2_gloo_gateway_metrics\n      - filter/min\n      -
+    transform/ggv1_envoy_cluster_names_to_workload_names\n      - transform/ggv2_envoy_cluster_names_to_workload_names\n
+    \     - transform/ggvx_set_static_attributes\n      - transform/ggvx_create_workload_ids\n
+    \     - transform/keep_gloo_gateway_labels\n      - gloo_metrics_processor\n      -
+    batch\n      receivers:\n      - prometheus\n      exporters:\n      - prometheus\n
+    \   traces/istio:\n      processors:\n      - batch\n      receivers:\n      -
+    jaeger\n      - opencensus\n      - otlp\n      - zipkin\n      exporters:\n      -
+    otlp/jaeger\n"
+kind: ConfigMap
+metadata:
+  annotations:
+    meta.helm.sh/release-name: gloo-platform
+    meta.helm.sh/release-namespace: gloo-mesh
+  creationTimestamp: "2025-10-04T08:51:50Z"
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: gloo-telemetry-collector-config
+  namespace: gloo-mesh
+  resourceVersion: "3665"
+  uid: 32b1b8a5-313d-4359-91be-34afcadfd9e7

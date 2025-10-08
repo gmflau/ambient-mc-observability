@@ -1,4 +1,4 @@
-### Istio Ambient Mesh Multi-Cluster's Tracing using Otel LGTM stack
+### Istio Ambient Mesh Multi-Cluster's Tracing using Gloo telemetry pipeline with Grafana Tempo
 
 #### Deploy KinD clusters:
 ```bash
@@ -6,9 +6,9 @@ export MGMT=mgmt
 export CLUSTER1=cluster1
 export CLUSTER2=cluster2
 
-bash ./data/steps/deploy-kind-clusters/deploy-mgmt.sh
-bash ./data/steps/deploy-kind-clusters/deploy-cluster1.sh
-bash ./data/steps/deploy-kind-clusters/deploy-cluster2.sh
+bash ./data/deploy-mgmt.sh
+bash ./data/deploy-cluster1.sh
+bash ./data/deploy-cluster2.sh
 ```
 
 #### Deploy and register Gloo Mesh
@@ -81,9 +81,7 @@ meshctl check
 ```
 
 
-### Install OSS LGTM stack
-
-Install OSS Grafana and Prometheus
+#### Install OSS Grafana and Prometheus
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update prometheus-community
@@ -154,222 +152,8 @@ open "http://${GRAFANA_SVC_IP}:3000/connections/datasources/new"
 1. Login using admin/prom-operator
 2. Add Tempo as datasource with http://tempo-query-frontend:3200
 ```
-Grab Tempo Distribtuor IP:
-```bash
-TEMPO_DISTRIBUTOR_IP=$(kubectl --context $MGMT -n monitoring get svc tempo-distributor -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo $TEMPO_DISTRIBUTOR_IP
-```
-
-
-Install and configure OSS Loki
-```bash
-helm upgrade --install loki \
-grafana/loki \
---namespace monitoring \
---wait \
---kube-context $MGMT \
---values - <<EOF
-loki:
-  auth_enabled: false
-  commonConfig:
-    replication_factor: 1
-  schemaConfig:
-    configs:
-      - from: "2024-04-01"
-        store: tsdb
-        object_store: s3
-        schema: v13
-        index:
-          prefix: loki_index_
-          period: 24h
-  pattern_ingester:
-      enabled: true
-  limits_config:
-    allow_structured_metadata: true
-    volume_enabled: true
-  ruler:
-    enable_api: true
-  tracing:
-    enabled: true
-minio:
-  enabled: true
-gateway:
-  enabled: true
-  service:
-    type: LoadBalancer
-    ports:
-      http: 80
-deploymentMode: SingleBinary
-singleBinary:
-  replicas: 1
-# Zero out replica counts of other deployment modes
-backend:
-  replicas: 0
-read:
-  replicas: 0
-write:
-  replicas: 0
-ingester:
-  replicas: 0
-querier:
-  replicas: 0
-queryFrontend:
-  replicas: 0
-queryScheduler:
-  replicas: 0
-distributor:
-  replicas: 0
-compactor:
-  replicas: 0
-indexGateway:
-  replicas: 0
-bloomCompactor:
-  replicas: 0
-bloomGateway:
-  replicas: 0
-EOF
-```
-Grab IP address of Loki gateway
-```bash
-export LOKI_GATEWAY_IP=$(kubectl get svc loki-gateway -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-echo $LOKI_GATEWAY_IP
-```
-
-Install OSS Promtail on `cluster1`
-```bash
-helm upgrade --install promtail \
-grafana/promtail \
---namespace monitoring \
---create-namespace \
---wait \
---kube-context $CLUSTER1 \
---values - <<EOF
-config:
-  # This is where you tell Promtail where to send logs
-  clients:
-    - url: http://${LOKI_GATEWAY_IP}/loki/api/v1/push
-      # Explicitly set the tenant_id. Use 'fake' or another consistent ID.
-      # This ID must match the X-Scope-OrgID in your Grafana Loki datasource.
-      tenant_id: my-tenant # Or your preferred tenant ID
-  # This section defines what logs Promtail should scrape
-  scrape_configs:
-    # Example: Scrape all pods in all namespaces
-    - job_name: kubernetes-pods
-      kubernetes_sd_configs:
-        - role: pod
-      relabel_configs:
-        # Keep logs from all containers in a pod
-        - action: keep
-          source_labels: [__meta_kubernetes_pod_container_name]
-          regex: .+
-        # Example of how labels are created from Kubernetes metadata
-        - source_labels: [__meta_kubernetes_pod_name]
-          target_label: pod
-        - source_labels: [__meta_kubernetes_namespace]
-          target_label: namespace
-        - source_labels: [__meta_kubernetes_pod_container_name]
-          target_label: container
-        # You can add more relabel_configs to shape your labels as needed
-        # For instance, to use the pod's app label:
-        - source_labels: [__meta_kubernetes_pod_label_app]
-          target_label: app
-EOF
-```
-Install OSS Promtail on `cluster2`
-```bash
-helm upgrade --install promtail \
-grafana/promtail \
---namespace monitoring \
---create-namespace \
---wait \
---kube-context $CLUSTER2 \
---values - <<EOF
-config:
-  # This is where you tell Promtail where to send logs
-  clients:
-    - url: http://${LOKI_GATEWAY_IP}/loki/api/v1/push
-      # Explicitly set the tenant_id. Use 'fake' or another consistent ID.
-      # This ID must match the X-Scope-OrgID in your Grafana Loki datasource.
-      tenant_id: my-tenant # Or your preferred tenant ID
-  # This section defines what logs Promtail should scrape
-  scrape_configs:
-    # Example: Scrape all pods in all namespaces
-    - job_name: kubernetes-pods
-      kubernetes_sd_configs:
-        - role: pod
-      relabel_configs:
-        # Keep logs from all containers in a pod
-        - action: keep
-          source_labels: [__meta_kubernetes_pod_container_name]
-          regex: .+
-        # Example of how labels are created from Kubernetes metadata
-        - source_labels: [__meta_kubernetes_pod_name]
-          target_label: pod
-        - source_labels: [__meta_kubernetes_namespace]
-          target_label: namespace
-        - source_labels: [__meta_kubernetes_pod_container_name]
-          target_label: container
-        # You can add more relabel_configs to shape your labels as needed
-        # For instance, to use the pod's app label:
-        - source_labels: [__meta_kubernetes_pod_label_app]
-          target_label: app
-EOF
-```
-
-
-#### Set up a new Loki datasource in Grafana
-
-Open the `/connections/datasources/new` endpoint in Grafana UI and search for `Loki`
-```bash
-GRAFANA_SVC_IP=$(kubectl --context $MGMT -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-open "http://${GRAFANA_SVC_IP}:3000/connections/datasources/new"
-```
-
-- Add connection URL as http://loki-gateway.monitoring.svc.cluster.local/
-
-- Go to `Derived fields` section at the bottom and add click on `+ Add`
-
-Name
-
-```bash
-traceID
-```
-
-> We will later install Istio and durig installation we will customize the default access log pattern so that it prints the `traceID` value in the access logs.
-
-Type
-
-```bash
-Regex in log line
-```
-
-Regex
-
-```bash
-"traceID":"([a-f0-9]{32})"
-```
-
-Query
-
-```bash
-${__value.raw}
-```
-
-URL Label
-
-```bash
-Open trace in Tempo
-```
-
-Internal Link
-
-```bash
-Enable via toggling
-```
-
-Select `Tempo` from dropdown.    
-Click `Save & Test`
-
+Then press `Save and test` to complete setup.  You should see a confirmation message like below:
+![tempo datasource](./img/tempo_ds.png)
 
 
 #### Install and link new ambient meshes
@@ -427,14 +211,13 @@ create_cacerts_secret ${REMOTE_CONTEXT2} ${REMOTE_CLUSTER2}
 cd ../..
 ```
 
-#### Deploy Ambient components
+#### Deploy Ambient components with tracing enabled
 ```bash
 CLUSTERS=(
     ${REMOTE_CONTEXT1}:${REMOTE_CLUSTER1}
     ${REMOTE_CONTEXT2}:${REMOTE_CLUSTER2}
 )
 
-# Loop through each cluster
 for cluster_info in "${CLUSTERS[@]}"; do
     # Split the cluster info into context and name
     IFS=':' read -r CLUSTER_CONTEXT CLUSTER_NAME <<< "$cluster_info"
@@ -527,18 +310,28 @@ Verify in Gloo Mesh Dashboard:
 meshctl dashboard
 ```
 
-Use the built-in Jaeger:
+#### Upgrade the management cluster to enable tracing with Grafana Tempo:
 ```bash
 helm get values gloo-platform -n gloo-mesh -o yaml --kube-context $MGMT > mgmt-plane-mc.yaml
-open mgmt-plane-mc.yaml
 ```
-Upgrade the management cluster to enable tracing:
+```bash
+cp mgmt-plane-mc.yaml mgmt-plane-mc-new.yaml
+
+yq eval '.telemetryGatewayCustomization.extraExporters = {"otlp/tempo": {"endpoint": "tempo-distributor.monitoring.svc.cluster.local:4317", "tls": {"insecure": true}}}' -i mgmt-plane-mc-new.yaml
+
+yq eval '.telemetryGatewayCustomization.extraPipelines = {"traces/tempo": {"exporters": ["otlp/tempo"], "processors": ["batch"], "receivers": ["otlp"]}}' -i mgmt-plane-mc-new.yaml
+
+yq eval '.telemetryCollectorCustomization = {"pipelines": {"traces/istio": {"enabled": true}}}' -i mgmt-plane-mc-new.yaml
+```
+
 ```bash
 helm upgrade gloo-platform gloo-platform/gloo-platform \
 --kube-context $MGMT \
 --namespace gloo-mesh \
--f mgmt-plane-mc2.yaml \
+-f mgmt-plane-mc-new.yaml \
 --version=$GLOO_VERSION
+
+kubectl --context $MGMT rollout status deployment/gloo-mesh-mgmt-server -n gloo-mesh
 ```
 Perform restart:
 ```bash
@@ -549,13 +342,17 @@ kubectl rollout restart -n gloo-mesh daemonset/gloo-telemetry-collector-agent --
 Upgrade the workload cluster `cluster1` to enable tracing:
 ```bash
 helm get values gloo-agent -n gloo-mesh -o yaml --kube-context $REMOTE_CONTEXT1 > data-plane-mc-1.yaml
-open data-plane-mc-1.yaml
+```
+```bash
+cp data-plane-mc-1.yaml data-plane-mc-1-new.yaml
+
+yq eval '.telemetryCollectorCustomization = {"skipVerify": true, "pipelines": {"traces/istio": {"enabled": true}}}' -i data-plane-mc-1-new.yaml
 ```
 ```bash
 helm upgrade gloo-agent gloo-platform/gloo-platform \
 --kube-context $REMOTE_CONTEXT1 \
 --namespace gloo-mesh \
--f data-plane-mc-1-2.yaml \
+-f data-plane-mc-1-new.yaml \
 --version=$GLOO_VERSION
 ```
 Verify:
@@ -569,13 +366,17 @@ kubectl rollout restart -n gloo-mesh daemonset/gloo-telemetry-collector-agent --
 Upgrade the workload cluster `cluster2` to enable tracing:
 ```bash
 helm get values gloo-agent -n gloo-mesh -o yaml --kube-context $REMOTE_CONTEXT2 > data-plane-mc-2.yaml
-open data-plane-mc-2.yaml
+```
+```bash
+cp data-plane-mc-2.yaml data-plane-mc-2-new.yaml
+
+yq eval '.telemetryCollectorCustomization = {"skipVerify": true, "pipelines": {"traces/istio": {"enabled": true}}}' -i data-plane-mc-2-new.yaml
 ```
 ```bash
 helm upgrade gloo-agent gloo-platform/gloo-platform \
 --kube-context $REMOTE_CONTEXT2 \
 --namespace gloo-mesh \
--f data-plane-mc-2-2.yaml \
+-f data-plane-mc-2-new.yaml \
 --version=$GLOO_VERSION
 ```
 Verify:
@@ -586,7 +387,6 @@ Perform restart:
 ```bash
 kubectl rollout restart -n gloo-mesh daemonset/gloo-telemetry-collector-agent --context $REMOTE_CONTEXT2
 ```
-
 
 
 #### Deploy Bookinfo sample app
@@ -614,4 +414,18 @@ echo $GW_IP
 ```bash
 while true; do curl --head http://$GW_IP/productpage; sleep 1; done
 ```
+
+#### View traces in Grafana Tempo
+```bash
+GRAFANA_SVC_IP=$(kubectl --context $MGMT -n monitoring get svc kube-prometheus-stack-grafana -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+open "http://${GRAFANA_SVC_IP}:3000/"
+```
+
+Login using `admin/prom-operator` and click `Explore` menu item from the `Grafana` menu bar.       
+Choose tempo from the dropdown list and enter `{}` in the **TraceQL** box.    
+Then hit the blue **Run** button to view traces.
+
+![Tempo trace list](./img/tempo_trace_list.png)
+![Tempo trace record](./img/tempo_trace_record.png)
+
 
